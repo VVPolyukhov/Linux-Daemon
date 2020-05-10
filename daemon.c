@@ -35,10 +35,6 @@ void Daemon(char* data[], int size) {
 			case 1:
 				exit(0);
 			case 2: 
-				if (pid = fork())
-					break;
-				else {
-					// Исправил, теперь реально выделяю память
 					char** buffer = NULL;
 					buffer = (char**)malloc(32*sizeof(char*));
 					char** argv2 = NULL;
@@ -52,11 +48,17 @@ void Daemon(char* data[], int size) {
 					dup2(fd,1);
 					close(fd);
 					signal_flag = 0;
-					execve(buffer[0], argv2, NULL);
+					if (pid = fork()) {
+						int status;
+						wait(&status);
+					}
+					else {
+						if (execve(buffer[0], argv2, NULL) < 0)
+							exit(1);
+					}
 					free(buffer);
 					free(argv2);
-					break;
-				}
+				
 		}
 	}
 }
@@ -64,15 +66,14 @@ void Daemon(char* data[], int size) {
 
 int main(int argc,char* argv[])
 {
-
+	
     if(fork())
 		exit(0);
     setsid(); // отрываемся от терминала
 	// Определяем сигналы
     signal(SIGINT,my_signal);
 	signal(SIGUSR1,my_signal);
-    printf("Daemon started\n");
-
+    
     int fd;
 	char buf[] = "Daemon started at ";
 	time_t pretime;
@@ -85,6 +86,6 @@ int main(int argc,char* argv[])
 	write(fd, buf, sizeof(buf)-1);
 	write(fd, asctime(start_time), 25);
 	close(fd);
-
+    
     Daemon(argv,argc-1);
 }
