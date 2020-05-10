@@ -1,54 +1,90 @@
-#include <stdio.h> 
-#include <string.h> 
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/time.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <syslog.h>
 #include <signal.h>
-#include <sys/wait.h>
-#include <resolv.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdbool.h>
+#include <time.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdbool.h>
+int signal_flag;
 
-bool flag = false;
-
-void handler(int sig) {
-   flag = true;
+void my_signal (int sig) {
+	// Осталась лишь только смена флага
+        switch(sig) {
+			case SIGUSR1:
+				signal_flag = 1;
+				break; 
+			case SIGINT:
+				signal_flag = 2;
+				break;
+			default:
+				break;
+        }
 }
 
-int Daemon(void) {
-   signal(SIGINT, handler);
-   while(1){
-      if (flag){
-         int fileDescriptor, ret;
-         char buf[] = "Hello, I am Daemon";
-         fileDescriptor = open("output.txt", O_CREAT|O_RDWR, S_IRWXU);
-         lseek(fileDescriptor, 0, SEEK_END);
-         ret = write(fileDescriptor, buf, sizeof(buf) - 1);
-         close(fileDescriptor);
-	 printf("Daemon stopped\n");  
-         flag = false;
-	 exit(0);
-      }
-   }
+void Daemon(char* data[], int size) {
+	pid_t pid;
+	int fd;
+
+	while(1) {
+		pause();
+		switch(signal_flag) {
+			case 1:
+				exit(0);
+			case 2: 
+				if (pid = fork())
+					break;
+				else {
+					// Исправил, теперь реально выделяю память
+					char** buffer = NULL;
+					buffer = (char**)malloc(32*sizeof(char*));
+					char** argv2 = NULL;
+					argv2 = (char**)malloc(size*sizeof(char*));
+					argv2[size]=NULL;
+					for(int i=0;i<size-1;i++) 
+						argv2[i]=data[i+2];
+					fd = open(data[1], O_CREAT|O_RDWR, S_IRWXU);
+					read(fd,buffer[0],7);
+					close(1);
+					dup2(fd,1);
+					close(fd);
+					signal_flag = 0;
+					execve(buffer[0], argv2, NULL);
+					free(buffer);
+					free(argv2);
+					break;
+				}
+		}
+	}
 }
 
-int main(int argc, char* argv[]) {
- pid_t parpid;
- if((parpid=fork())<0) { // создание дочернего процесса главного процесса (точная копия исполняемой программы)
-	printf("\nCan't fork"); // если по какой-либо причине это сделать не удается выходим с ошибкой.
-	exit(0);                // обращаемся к man fork
- }
- else if (parpid!=0) 	// если дочерний процесс уже существует
-	exit(1);        // генерируем немедленный выход из программы (иначе будет еще одна копия программы)
- setsid(); 	// отрываемся от управляющего терминала и переходим в фоновый режим (перевод нашего дочернего процесса в новую сесию)
- printf("Daemon started. PID=%i\n", getpid());  
- Daemon();           // вызов демона!
- return 0;
+
+int main(int argc,char* argv[])
+{
+
+    if(fork())
+		exit(0);
+    setsid(); // отрываемся от терминала
+	// Определяем сигналы
+    signal(SIGINT,my_signal);
+	signal(SIGUSR1,my_signal);
+    printf("Daemon started\n");
+
+    int fd;
+	char buf[] = "Daemon started at ";
+	time_t pretime;
+	struct tm * start_time;
+	time(&pretime);
+	start_time = localtime(&pretime);
+	fd = open("dmn.txt", O_CREAT|O_RDWR, S_IRWXU);
+	lseek(fd, 0, SEEK_END);
+	// Передаём время начала работы программы
+	write(fd, buf, sizeof(buf)-1);
+	write(fd, asctime(start_time), 25);
+	close(fd);
+
+    Daemon(argv,argc-1);
 }
